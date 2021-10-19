@@ -19,14 +19,17 @@ Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 ZeemanSpectra = "1a51ffc3-a734-4581-93fb-13c6a2992147"
 
 [compat]
-Unitful = "1"
-ProgressLogging = "0.1"
-DataFrames = "1"
-Parameters = "0.12"
-StructArrays = "0.6"
 CUDA = "3"
+DataFrames = "1"
 GLMakie = "0.4"
+LineProfile = "1" 
+MyShow = "1"
+Parameters = "0.12"
 PhysicalConstants = "0.2"
+ProgressLogging = "0.1"
+StructArrays = "0.6"
+Unitful = "1"
+ZeemanSpectra = "1"
 julia = "1"
 
 [extras]
