@@ -19,5 +19,6 @@ function free_propagate!(u, trans, plan, iplan)
     plan * u
     u .*= trans
     iplan * u
+    u .= (reverse(u, dims = 2) .+ u) ./ 2
     nothing
 end
