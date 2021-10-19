@@ -17,10 +17,6 @@ function optical_extraction!(u::CuArray, n_upper::CuArray, n_lower::CuArray, d, 
     blocks = cld.(s, threads)
     @cuda threads = threads blocks = blocks kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
     synchronize()
-    threads = (32, 8)
-    blocks = cld.(s, threads)
-    @cuda threads = threads blocks = blocks kernel_fc(u, n_upper, n_lower, s)
-    synchronize()
 end
 
 function kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
@@ -28,7 +24,7 @@ function kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
     idj = (blockIdx().y - 1) * blockDim().y + threadIdx().y
     stride = (blockDim().x * gridDim().x, blockDim().y * gridDim().y)
 
-    for i in idi:stride[1]:s[1], j in idj:stride[2]:s[2]÷2
+    for i in idi:stride[1]:s[1], j in idj:stride[2]:s[2]
         nu = n_upper[i, j]
         nl = n_lower[i, j]
         uij = u[i, j]
@@ -48,22 +44,6 @@ function kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
         n_upper[i, j] = nu
         n_lower[i, j] = nl
         u[i, j] = uij
-    end
-    nothing
-end
-
-function kernel_fc(u, n_upper, n_lower, s)
-    idi = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    idj = (blockIdx().y - 1) * blockDim().y + threadIdx().y
-    stride = (blockDim().x * gridDim().x, blockDim().y * gridDim().y)
-
-    for i in idi:stride[1]:s[1], j in idj:stride[2]:s[2]
-       if j > s[2] ÷ 2
-        jj = s[2] - j + 1
-        u[i, j] = u[i, jj]
-        n_upper[i, j] = n_upper[i, jj]
-        n_lower[i, j] = n_lower[i, jj]
-       end
     end
     nothing
 end

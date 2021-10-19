@@ -11,7 +11,6 @@ function flow_refresh!(fs::StructArray, react, density, dt)
         threads = (32, 5)
         blocks = cld.(s[2:3], threads)
         @cuda threads = threads blocks = blocks kernel_refresh!(s[2:3], i, fs, I₂, H₂O, k1, k2, dt)
-        synchronize()
     end
 end
 

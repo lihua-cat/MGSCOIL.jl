@@ -6,16 +6,19 @@ _mean(a) = sum(a) / length(a)
 
 function issymmetry(a)
     len = size(a, 2)
-    iseven(len) || error("not even")
+    # iseven(len) || error("not even")
+    au = selectdim(a, 2, 1:len÷2)
+    al = selectdim(a, 2, len:-1:(len-len÷2+1))
     if eltype(a) <: Bool
-        symm = a[:, 1:len÷2] == reverse(a[:, len÷2+1:len], dims = 2)
+        symm = au == al
     else
-        symm = a[:, 1:len÷2] ≈ reverse(a[:, len÷2+1:len], dims = 2)
+        symm = all(au .≈ al)
     end
     if !symm
+        display(a)
         error("not symmetry")
     end
-    symm
+    nothing
 end
 
 
@@ -49,8 +52,8 @@ function angular_spectrum_paras(ap, radius, d_list, Nx, Ny, Nz, X, Y, λ34, λ22
     trans34 = Array{Complex{PRECISION}}(undef, Nx, Ny, length(dz))
     trans22 = Array{Complex{PRECISION}}(undef, Nx, Ny, length(dz))
     for i in 1:length(dz)
-        trans34[:, :, i] = mat_as(νx, νy, λ34, dz[i], Nx, Ny)
-        trans22[:, :, i] = mat_as(νx, νy, λ22, dz[i], Nx, Ny)
+        trans34[:, :, i] .= mat_as(νx, νy, λ34, dz[i], Nx, Ny)
+        trans22[:, :, i] .= mat_as(νx, νy, λ22, dz[i], Nx, Ny)
     end
     return ap_mask, δps34, δps22, trans34, trans22
 end
@@ -198,9 +201,9 @@ function propagate(u34, u22, fs, n; cavity, flow, lines, grid, random = false, s
             #   re-pump and hyperfine relaxation 
             flow_refresh_fast!(fs_d, react, density, dt)
             #   free propagate
-            tn = j in (1, n_trip) ? 1 : 
-                 j in (Nz + 1, Nz + 2) ? 3 : 
-                 2
+            tn = j in (1, n_trip) ? 
+                 1 : j in (Nz + 1, Nz + 2) ? 
+                     3 : 2
             free_propagate!(u34_d, trans34_d[:, :, tn], plan_d, iplan_d)
             free_propagate!(u22_d, trans22_d[:, :, tn], plan_d, iplan_d)
             #   optical extraction
@@ -246,20 +249,20 @@ function propagate(u34, u22, fs, n; cavity, flow, lines, grid, random = false, s
         p22 = uustrip(power22[i])
 
 
-        i == 2 && @printf "%5s | %8s | %8s | %7s | %10s | %10s | %10s | %10s | %6s \n" "i" "g34" "g22" "yield" "Ie3" "Ie2" "power34" "power22" "t(μs)"
+        i == 2 && @printf "%5s | %8s | %8s | %7s | %10s | %10s | %10s | %10s | %7s \n" "i" "g34" "g22" "yield" "Ie3" "Ie2" "power34" "power22" "t(μs)"
         # if (i <= 50 && i % 5 == 0) || i > 50
         if i % 100 == 0
-            @printf "%5d | %8.6f | %8.6f | %7.5f | %10.4e | %10.4e | %10.4e | %10.4e | %6.3f \n" i g34 g22 yield ye3 ye2 p34 p22 ustrip(u"μs", i * t_trip)
+            @printf "%5d | %8.6f | %8.6f | %7.5f | %10.4e | %10.4e | %10.4e | %10.4e | %7.3f \n" i g34 g22 yield ye3 ye2 p34 p22 ustrip(u"μs", i * t_trip)
         end 
         
-        if i < 100 || i % 50 == 0
+        # if i < 100 || i % 50 == 0
             i_node[] = i
             u34_node[] = Array(abs2.(u34_d))
             u22_node[] = Array(abs2.(u22_d))
             y_node[] = Array(dropmean(fs_d.O₂e, dims = 3) / uustrip(density.O₂))
             g34_node[] = Array(uustrip(line34.σ) * (dropmean(fs_d.Ie3, dims = 3) - line34.gg * dropmean(fs_d.Ig4, dims = 3)))
             g22_node[] = Array(uustrip(line22.σ) * (dropmean(fs_d.Ie2, dims = 3) - line22.gg * dropmean(fs_d.Ig2, dims = 3)))
-        end
+        # end
     end
     return power34, power22, Array(u34_d), Array(u22_d), replace_storage(Array, fs_d), timeseries
 end

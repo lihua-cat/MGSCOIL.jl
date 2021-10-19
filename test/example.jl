@@ -44,7 +44,7 @@ cavity = let
     d = (gs.d1, ones(gs.num-1)*gs.d..., L-gs.d1-(gs.num-1)*gs.d) .|> u"cm"
     radius = 10.0u"m"
     r_hr = 0.9999
-    r_oc = 0.96
+    r_oc = 0.84
     gth = -log(r_oc * r_hr) / 2Z |> u"cm^-1"
     Fresnel = Tuple([(a/2)^2 / L / 1.315u"μm" |> NoUnits for a in ap])
     (;L, ap, d, radius, r_hr, r_oc, gth, Fresnel)
@@ -63,7 +63,7 @@ end
 T = 200u"K"
 Mach = 1.8
 
-N = Nx, Ny, Nz = (1024, 256, gs.num)
+N = Nx, Ny, Nz = (4096, 1024, gs.num)
 f2c = 8192 ÷ Nx
 
 g34_0 = 0.010u"cm^-1"
@@ -90,8 +90,13 @@ tic_running = time_ns()
 begin
     u34 = zeros(ComplexF64, Nx, Ny)
     u22 = zeros(ComplexF64, Nx, Ny)
-    power34, power22, u34n, u22n, fsn, ts = propagate(u34, u22, fs, 10000; cavity = cavity, flow = flow, lines = lines, grid = grid, random = false, sw = 1)
-    nothing
+    power34, power22, u34n, u22n, fsn, ts = 
+        propagate(u34, u22, fs, 20000; 
+                  cavity = cavity, 
+                  flow = flow, 
+                  lines = lines, 
+                  grid = grid, 
+                  random = false)
 end
 toc_running = time_ns()
 let
@@ -115,7 +120,7 @@ begin
     ds = grid.X * grid.Y / (grid.Nx * grid.Ny)
     out2inner = (1 - cavity.r_oc) / cavity.r_oc
 
-    N = 10000
+    N = 2
     time_output = collect(0:N-1) * t_trip .|> u"μs"
     power34 = zeros(PRECISION, N) * u"W"
     power22 = zeros(PRECISION, N) * u"W"
@@ -127,7 +132,7 @@ begin
         # sw = n % 2000 < 600 ? 1 : 0
         sw = 1
 
-        bounce!(u34_d, u22_d, fs_d, false, sw; AS_d = AS_d, grid = grid, cavity = cavity, flow = flow, lines = lines)
+        bounce!(u34_d, u22_d, fs_d, true, sw; AS_d = AS_d, grid = grid, cavity = cavity, flow = flow, lines = lines)
         if n % grid.ratio == 0  
             flow_refresh!(fs_d, flow, dt_flush)
         end
