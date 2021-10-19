@@ -20,6 +20,7 @@ ZeemanSpectra = "1a51ffc3-a734-4581-93fb-13c6a2992147"
 
 [compat]
 GLMakie = "0.4"
+PhysicalConstants = "0.2"
 julia = "1"
 
 [extras]
