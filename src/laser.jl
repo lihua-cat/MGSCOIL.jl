@@ -79,7 +79,7 @@ function bounce!(u34_d, u22_d, fs_d, random = false, sw = 1; AS_d, grid, cavity,
     @unpack d, r_oc, r_hr = cavity
     @unpack react, density = flow
     @unpack line34, line22 = lines
-    @unpack Z, Nz = grid
+    @unpack Z, Nx, Ny, Nz = grid
     ap_d, δps34_d, δps22_d, trans34_d, trans22_d, plan_d, iplan_d = AS_d
     
     d_trip = (d..., reverse(d)...)
@@ -102,8 +102,8 @@ function bounce!(u34_d, u22_d, fs_d, random = false, sw = 1; AS_d, grid, cavity,
              2
         trans34 = view(trans34_d, :, :, tn)
         trans22 = view(trans22_d, :, :, tn)
-        free_propagate!(u34_d, trans34, plan_d, iplan_d)
-        free_propagate!(u22_d, trans22, plan_d, iplan_d)
+        free_propagate!(u34_d, trans34, plan_d, iplan_d, Nx, Ny)
+        free_propagate!(u22_d, trans22, plan_d, iplan_d, Nx, Ny)
         #   optical extraction
         if j in (1:Nz..., Nz+2:2Nz+1...)
             k = j <= Nz ? j : 2Nz + 2 - j
@@ -204,8 +204,8 @@ function propagate(u34, u22, fs, n; cavity, flow, lines, grid, random = false, s
             tn = j in (1, n_trip) ? 
                  1 : j in (Nz + 1, Nz + 2) ? 
                      3 : 2
-            free_propagate!(u34_d, trans34_d[:, :, tn], plan_d, iplan_d)
-            free_propagate!(u22_d, trans22_d[:, :, tn], plan_d, iplan_d)
+            free_propagate!(u34_d, trans34_d[:, :, tn], plan_d, iplan_d, Nx, Ny)
+            free_propagate!(u22_d, trans22_d[:, :, tn], plan_d, iplan_d, Nx, Ny)
             #   optical extraction
             if j in (1:Nz..., Nz+2:2Nz+1...)
                 k = j <= Nz ? j : 2Nz + 2 - j
