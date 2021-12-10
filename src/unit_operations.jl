@@ -1,22 +1,19 @@
-import Unitful: 𝐍, 𝐌, 𝐋, Length, Area, Time, Wavenumber, Velocity, Energy, Frequency, Power
-import Unitful: VolumeFlow as ReactRate
-
 #   derived_dimension (g/mol, cm^-3)
-@derived_dimension MolarMass 𝐌/𝐍
+@derived_dimension MolarMass 𝐌 / 𝐍
 @derived_dimension ParticleDensity 𝐋^-3
 
 const UNIT = (;
-                Length = u"cm",
-                Area = u"cm^2",
-                ParticleDensity = u"cm^-3",
-                Time = u"s",
-                Wavenumber = u"cm^-1",
-                Velocity = u"cm/s",
-                Energy = u"J",
-                Power = u"W",
-                Frequency = u"s^-1",
-                ReactRate = u"cm^3/s"
-             )
+    Length = u"cm",
+    Area = u"cm^2",
+    ParticleDensity = u"cm^-3",
+    Time = u"s",
+    Wavenumber = u"cm^-1",
+    Velocity = u"cm/s",
+    Energy = u"J",
+    Power = u"W",
+    Frequency = u"s^-1",
+    ReactRate = u"cm^3/s"
+)
 
 #   uustrip
 for d in propertynames(UNIT)

@@ -1,10 +1,10 @@
 function optical_extraction!(u, n_upper, n_lower, d, dt, line, sw = 1)
     gain = line.σ * (n_upper - line.gg * n_lower) ./ (1 + abs2.(u) ./ (n_upper * d)) * sw
-    Δn_sp = n_upper * line.A * dt          
+    Δn_sp = n_upper * line.A * dt
     Δpn_sp = Δn_sp * d
     @. u += sqrt(Δpn_sp)                 # no random phase noise
-    Δn_st = gain .* abs2.(u)    
-    @. u *= exp(1/2 * gain * d)
+    Δn_st = gain .* abs2.(u)
+    @. u *= exp(1 / 2 * gain * d)
     n_upper .-= Δn_sp + Δn_st
     n_lower .+= Δn_sp + Δn_st
     nothing
@@ -13,10 +13,9 @@ end
 function optical_extraction!(u::CuArray, n_upper::CuArray, n_lower::CuArray, d, dt, line, random = false, sw = 1)
     @uustrip d dt line
     s = size(u)
-    threads = (64, 8)
+    threads = (64, 4)
     blocks = cld.(s, threads)
     @cuda threads = threads blocks = blocks kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
-    synchronize()
 end
 
 function kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
@@ -24,20 +23,20 @@ function kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
     idj = (blockIdx().y - 1) * blockDim().y + threadIdx().y
     stride = (blockDim().x * gridDim().x, blockDim().y * gridDim().y)
 
-    for i in idi:stride[1]:s[1], j in idj:stride[2]:s[2]
+    for i = idi:stride[1]:s[1], j = idj:stride[2]:s[2]
         nu = n_upper[i, j]
         nl = n_lower[i, j]
         uij = u[i, j]
         gain = line.σ * (nu - line.gg * nl) / (1 + abs2(uij) / (nu * d)) * sw
         Δn_sp = nu * line.A * dt
-        Δpn_sp = Δn_sp * d / 40
+        Δpn_sp = Δn_sp * d
         if random
-            uij += sqrt(Δpn_sp) * exp((rand() - 1/2) * 2im * π)
+            uij += sqrt(Δpn_sp) * exp((rand() - 1 / 2) * 2im * π)
         else
             uij += sqrt(Δpn_sp)
         end
         Δn_st = gain * abs2(uij)
-        uij *= exp(1/2 * gain * d)
+        uij *= exp(1 / 2 * gain * d)
         Δn = Δn_sp + Δn_st
         nu -= Δn
         nl += Δn
@@ -47,3 +46,36 @@ function kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
     end
     nothing
 end
+
+# function kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
+#     idi = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+#     idj = (blockIdx().y - 1) * blockDim().y + threadIdx().y
+#     stride = (blockDim().x * gridDim().x, blockDim().y * gridDim().y)
+
+#     for i in idi:stride[1]:s[1], j in idj:stride[2]:s[2]÷2
+#         nu = n_upper[i, j]
+#         nl = n_lower[i, j]
+#         uij = u[i, j]
+#         gain = line.σ * (nu - line.gg * nl) / (1 + abs2(uij) / (nu * d)) * sw
+#         Δn_sp = nu * line.A * dt
+#         Δpn_sp = Δn_sp * d
+#         if random
+#             uij += sqrt(Δpn_sp) * exp((rand() - 1/2) * 2im * π)
+#         else
+#             uij += sqrt(Δpn_sp)
+#         end
+#         Δn_st = gain * abs2(uij)
+#         uij *= exp(1/2 * gain * d)
+#         Δn = Δn_sp + Δn_st
+#         nu -= Δn
+#         nl += Δn
+#         n_upper[i, j] = nu
+#         n_lower[i, j] = nl
+#         u[i, j] = uij
+#         jj = s[2] - j + 1
+#         n_upper[i, jj] = nu
+#         n_lower[i, jj] = nl
+#         u[i, jj] = uij
+#     end
+#     nothing
+# end

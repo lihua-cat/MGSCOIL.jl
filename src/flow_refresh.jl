@@ -1,10 +1,9 @@
 flow_refresh!(fs, flow, dt) = flow_refresh!(fs, flow.react, flow.density, dt)
 
-function flow_refresh!(fs::StructArray, react, density, dt)
-    @uustrip react density dt
-    @unpack O₂g, O₂e, Ie3, Ie2, Ig4, Ig2, Ig31 = fs
-    @unpack O₂, I, I₂, H₂O = density
-    @unpack kf, kr, k1, k2 = react
+function flow_refresh!(fs, react, density, dt)
+    (; I₂, H₂O) = density
+    (; k1, k2) = react
+    @uustrip I₂ H₂O k1 k2 dt
 
     s = size(fs.Ie3)
     for i in s[1]:-1:2
@@ -12,7 +11,6 @@ function flow_refresh!(fs::StructArray, react, density, dt)
         blocks = cld.(s[2:3], threads)
         @cuda threads = threads blocks = blocks kernel_refresh!(s[2:3], i, fs, I₂, H₂O, k1, k2, dt)
     end
-    synchronize()
 end
 
 function kernel_refresh!(s, i, fs, I₂, H₂O, k1, k2, dt)
@@ -33,14 +31,12 @@ function kernel_refresh!(s, i, fs, I₂, H₂O, k1, k2, dt)
     nothing
 end
 
-function flow_refresh_fast!(fs::StructArray, react, density, dt)
-    @uustrip react density dt
-    @unpack O₂g, O₂e, Ie3, Ie2, Ig4, Ig2, Ig31 = fs
-    @unpack O₂ = density
-    @unpack kf, kr, k3, k4 = react
+function flow_refresh_fast!(fs, react, density, dt)
+    (; kf, kr, k3, k4) = react
     ntot = sum(density)
-    hfr_e = k4 * O₂
+    hfr_e = k4 * density.O₂
     hfr_g = k3 * ntot
+    @uustrip hfr_e hfr_g kf kr dt
 
     s = size(fs.Ie3)
     # kernel = @cuda launch=false kernel_refresh_fast(s, fs, hfr_e, hfr_g, kf, kr, dt)
@@ -49,7 +45,6 @@ function flow_refresh_fast!(fs::StructArray, react, density, dt)
     threads = (64, 4, 1)
     blocks = cld.(s, threads)
     @cuda threads = threads blocks = blocks kernel_refresh_fast(s, fs, hfr_e, hfr_g, kf, kr, dt)
-    synchronize()
 end
 
 function kernel_refresh_fast(s, fs, hfr_e, hfr_g, kf, kr, dt)

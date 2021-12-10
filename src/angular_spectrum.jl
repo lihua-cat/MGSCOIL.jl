@@ -15,27 +15,22 @@ function mat_as(νx, νy, λ, d, Nx, Ny)
     return ifftshift(trans)
 end
 
-function free_propagate!(u, trans, plan, iplan, Nx, Ny)
+function free_propagate!(u, trans, plan, iplan)
     plan * u
     u .*= trans
     iplan * u
-    # s = (Nx, Ny)
-    # threads = (64, 8)
-    # blocks = cld.(s, threads)
-    # @cuda threads = threads blocks = blocks kernel_flip(u, s)
-    # synchronize()
 end
 
-function kernel_flip(u, s)
-    idi = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    idj = (blockIdx().y - 1) * blockDim().y + threadIdx().y
-    stride = (blockDim().x * gridDim().x, blockDim().y * gridDim().y)
+# function kernel_flip(u, s)
+#     idi = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+#     idj = (blockIdx().y - 1) * blockDim().y + threadIdx().y
+#     stride = (blockDim().x * gridDim().x, blockDim().y * gridDim().y)
 
-    for i in idi:stride[1]:s[1], j in idj:stride[2]:s[2]
-        if j <= s[2]÷2
-            u[i, j] = (u[i, j] + u[i, s[2]-j+1]) / 2
-            u[i, s[2]-j+1] = u[i, j]
-        end
-    end
-    nothing
-end
+#     for i in idi:stride[1]:s[1], j in idj:stride[2]:s[2]
+#         if j <= s[2]÷2
+#             u[i, j] = (u[i, j] + u[i, s[2]-j+1]) / 2
+#             u[i, s[2]-j+1] = u[i, j]
+#         end
+#     end
+#     nothing
+# end
