@@ -1,5 +1,7 @@
 /Manifest.toml
 
+/.vscode
+
 *.dll
 *.so
 
