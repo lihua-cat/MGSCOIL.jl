@@ -13,11 +13,13 @@ import PhysicalConstants.CODATA2018: c_0 as 𝑐
 using Unitful, StructArrays
 using CUDA;
 CUDA.allowscalar(false);
-using CUDA.CUFFT
+# using CUDA.CUFFT
 using GLMakie
 using ProgressLogging
 
-using MGSCOIL, AngularSpectrum
+import ZeemanSpectra: σr_ltp
+import AngularSpectrum: plan_as, angular_spectrum_paras
+using MGSCOIL
 using MyShow
 
 toc_import = time_ns()
@@ -31,7 +33,7 @@ end
 println("Model Setup: Runing ...")
 tic_setup = time_ns()
 
-L = 1.5u"m"
+L = 0.01u"μs" * 𝑐 / 2 |> u"m"   #   1.5u"m"
 Z = 25.0u"cm"
 Y = 1.9u"cm"
 gs = let
@@ -43,9 +45,9 @@ end
 ap = (x = 6.0u"cm", y = 1.5u"cm")
 cavity = let
     d = (gs.d1, ones(gs.num - 1) * gs.d..., L - gs.d1 - (gs.num - 1) * gs.d) .|> u"cm"
-    radius = 10.0 * u"m"
+    radius = Inf * u"m"
     r_hr = 0.9999
-    r_oc = 0.84
+    r_oc = 0.9
     gth = -log(r_oc * r_hr) / 2Z |> u"cm^-1"
     Fresnel = Tuple([(a / 2)^2 / L / 1.315u"μm" |> NoUnits for a in ap])
     (; L, ap, d, radius, r_hr, r_oc, gth, Fresnel)
@@ -86,21 +88,40 @@ let
 end
 
 ## ----------------------------------------------------
+println("MGS interpolation: Runing ...")
+tic = time_ns()
+
+B_range = 0:10:600
+interp_linear43 = σr_ltp(4, 3, B_range, "S", T = flow.T, P = flow.P, γ = flow.γₚ_mix)
+interp_linear22 = σr_ltp(2, 2, B_range, "S", T = flow.T, P = flow.P, γ = flow.γₚ_mix)
+
+toc = time_ns()
+let
+    time = round((toc - tic) / 1e9, digits = 4)
+    print("MGS interpolation: Done ")
+    printstyled("$(now()) [$time s] \n", color = :yellow)
+end
+
+## ----------------------------------------------------
 println("Simulation: Runing ...")
 tic_running = time_ns()
+
+waveform = (; period = 10000, cycle = 4000 / 10000, rising = 200, falling = 110,
+        offset = 100, high = 360, low = 0, dc = 400)
+
 begin
-    waveform = (; period = 500, cycle = 0.4, rising = 100, falling = 10,
-        offset = -100, amplitude = 400, residual = 50)
     u34 = zeros(ComplexF64, Nx, Ny)
     u22 = zeros(ComplexF64, Nx, Ny)
     power34, power22, u34n, u22n, fsn, time_output =
-        propagate(u34, u22, fs, 1000;
+        propagate(u34, u22, fs, 5000;
             cavity = cavity,
             flow = flow,
             lines = line,
             grid = grid,
             waveform = waveform,
-            random = true)
+            interp = B -> (interp_linear43(B), interp_linear22(B)),
+            random = false,
+            PRECISION = Float32)
 end
 toc_running = time_ns()
 let
@@ -124,7 +145,10 @@ begin
     ds = grid.X * grid.Y / (grid.Nx * grid.Ny)
     out2inner = (1 - cavity.r_oc) / cavity.r_oc
 
-    N = 5000
+    waveform = (; period = 10000, cycle = 4000 / 10000, rising = 400, falling = 110,
+        offset = 0, high = 360, low = 0, dc = 400)
+
+    N = 500
     time_output = collect(0:N-1) * t_trip .|> u"μs"
     power34 = zeros(PRECISION, N) * u"W"
     power22 = zeros(PRECISION, N) * u"W"
@@ -133,12 +157,15 @@ begin
 
     tic_main = time_ns()
 
-    @progress for n = 2:N
+    @progress for n in 2:N
 
         # sw = n % 500 < 150 ? 1 : 0
-        sw = 1
+        # sw = 1
+        field = MGSCOIL.pulse(n, waveform = waveform)
+        sw34 = interp_linear43(field)
+        sw22 = interp_linear22(field)
 
-        bounce!(u34_d, u22_d, fs_d, true, sw; AS_d = AS_d, grid = grid, cavity = cavity, flow = flow, lines = line)
+        bounce!(u34_d, u22_d, fs_d, true, sw34, sw22; AS_d = AS_d, grid = grid, cavity = cavity, flow = flow, lines = line)
         if n % grid.ratio == 0
             flow_refresh!(fs_d, flow, dt_flush)
         end

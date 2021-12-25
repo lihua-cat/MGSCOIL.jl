@@ -35,8 +35,8 @@ function plot1(u, grid, ap)
     limits!(ax1, 0, X, 0, Y)
     xlims!(ax2, 0, X)
     ylims!(ax3, 0, Y)
-    ylims!(ax2, low = 0)
-    xlims!(ax3, low = 0)
+    ylims!(ax2, 0, nothing)
+    xlims!(ax3, 0, nothing)
 
     fig
 end
@@ -46,7 +46,7 @@ function plot2(power, ts)
 
     fig = Figure(title = "output power")
     ax1 = Axis(fig[1, 1], xlabel = "time(μs)", ylabel = "power(W)")
-    p = lines!(ax1, ts * 1e6, power)
+    [lines!(ax1, ts * 1e6, p) for p in power]
     fig
 end
 

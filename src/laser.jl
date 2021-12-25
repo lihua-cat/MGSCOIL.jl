@@ -1,22 +1,22 @@
 dropmean(A; dims = :) = dropdims(mean(A; dims = dims); dims = dims)
-mean_d(a) = sum(a) / length(a)
+cu_mean(a) = sum(a) / length(a)
 
-# function issymmetry(a)
-#     len = size(a, 2)
-#     # iseven(len) || error("not even")
-#     au = selectdim(a, 2, 1:len÷2)
-#     al = selectdim(a, 2, len:-1:(len-len÷2+1))
-#     if eltype(a) <: Bool
-#         symm = au == al
-#     else
-#         symm = all(au .≈ al)
-#     end
-#     if !symm
-#         display(a)
-#         error("not symmetry")
-#     end
-#     nothing
-# end
+function issymmetry(a)
+    len = size(a, 2)
+    # iseven(len) || error("not even")
+    au = selectdim(a, 2, 1:len÷2)
+    al = selectdim(a, 2, len:-1:(len-len÷2+1))
+    if eltype(a) <: Bool
+        symm = au == al
+    else
+        symm = all(au .≈ al)
+    end
+    if !symm
+        display(a)
+        error("not symmetry")
+    end
+    nothing
+end
 
 "output power = total energy at oc plane / one round trip time"
 function outpower(u, ds, e, t_trip)
@@ -41,19 +41,13 @@ function angular_spectrum_paras(ap, radius, d_list, Nx, Ny, Nz, X, Y, λ34, λ22
     apx2 = Nx - apx1 + 1
     apy2 = Ny - apy1 + 1
     ap_mask = (apx1 .< nx .+ 1 .< apx2) .* transpose(apy1 .< ny .+ 1 .< apy2)
-    # δ = isinf(radius) ? ones(Nx, Ny) .* zero(radius) : @. radius - √(radius^2 - xs^2 - yts^2)
-    # δps34 = @. cispi(ustrip(NoUnits, -2 / λ34 * 2 * δ))
-    # δps22 = @. cispi(ustrip(NoUnits, -2 / λ22 * 2 * δ))
     δps34 = phase_shift(xs, ys, radius, λ34)
     δps22 = phase_shift(xs, ys, radius, λ22)
     dz = d_list[[1, 2, Nz + 1]]
-    # νx, νy = xy2νxy(X, Y, Nx, Ny)
     νx, νy = spatial_frequency(X, Y, Nx, Ny)
     trans34 = Array{ComplexF64}(undef, Nx, Ny, length(dz))
     trans22 = Array{ComplexF64}(undef, Nx, Ny, length(dz))
     for i = 1:length(dz)
-        # trans34[:, :, i] .= mat_as(νx, νy, λ34, dz[i], Nx, Ny)
-        # trans22[:, :, i] .= mat_as(νx, νy, λ22, dz[i], Nx, Ny)
         trans34[:, :, i] .= propagation_func(νx, νy, λ34, dz[i])
         trans22[:, :, i] .= propagation_func(νx, νy, λ22, dz[i])
     end
@@ -78,21 +72,21 @@ function angular_spectrum_paras(cavity, grid, lines; gpu = true, PRECISION = Flo
 end
 
 function pulse(i; waveform)
-    (; period, cycle, rising, falling, offset, amplitude, residual) = waveform
+    (; period, cycle, rising, falling, offset, high, low, dc) = waveform
     on = period * cycle
     i = i - offset >= 0 ? i - offset : period + (i - offset)
     i = i % period
     out = 0
     if i < rising
-        out = (i / rising) * (amplitude - residual) + residual
-    elseif i < rising + on
-        out = amplitude
-    elseif i < rising + on + falling
-        out = amplitude - (i - rising - on) / falling * (amplitude - residual)
+        out = (i / rising) * (high - low) + low
+    elseif i < on
+        out = high
+    elseif i < on + falling
+        out = high - (i - on) / falling * (high - low)
     else
-        out = residual
+        out = low
     end
-    return out
+    return dc - out
 end
 
 function bounce!(u34_d, u22_d, fs_d, random = false, sw34 = 1, sw22 = 1; AS_d, grid, cavity, flow, lines)
@@ -150,11 +144,11 @@ function bounce!(u34_d, u22_d, fs_d, random = false, sw34 = 1, sw22 = 1; AS_d, g
     end
 end
 
-function propagate(u34, u22, fs, n; cavity, flow, lines, grid, waveform, random = false, PRECISION = Float32)
+function propagate(u34, u22, fs, n; cavity, flow, lines, grid, waveform, interp, random = false, PRECISION = Float32)
     #   unpack input namedtuples
     (; L, ap, radius, r_oc) = cavity
     d_list = cavity.d
-    (; T, P, γₚ_mix, react, density) = flow
+    (; react, density) = flow
     (; line34, line22) = lines
     (; Nx, Ny, Nz, X, Y, ratio) = grid
     #   preparation 
@@ -175,10 +169,6 @@ function propagate(u34, u22, fs, n; cavity, flow, lines, grid, waveform, random 
     plan_d, iplan_d = plan_as(u22_d)
     AS_d = (ap = ap_d, δps34 = δps34_d, δps22 = δps22_d, trans34 = trans34_d,
         trans22 = trans22_d, p = plan_d, ip = iplan_d)
-
-    B_range = 0:1:600
-    interp_linear43 = σr_ltp(4, 3, B_range, "S", T = T, P = P, γ = γₚ_mix)
-    interp_linear22 = σr_ltp(2, 2, B_range, "S", T = T, P = P, γ = γₚ_mix)
 
     #   main loop
     t_trip = 2L / 𝑐
@@ -215,10 +205,11 @@ function propagate(u34, u22, fs, n; cavity, flow, lines, grid, waveform, random 
     Label(fig[0, :], text = @lift("trip = $($i_node)"), tellwidth = false)
     display(fig)
 
+    @printf "%5s | %8s | %8s | %7s | %10s | %10s | %10s | %10s | %7s \n" "i" "g34" "g22" "yield" "Ie3" "Ie2" "power34" "power22" "t(μs)"
+
     @progress for i = 2:n
         field = pulse(i, waveform = waveform)
-        sw34 = interp_linear43(field)
-        sw22 = interp_linear22(field)
+        sw34, sw22 = interp(field)
         # sw = i % 500 < 150 ? 1 : 0
         bounce!(u34_d, u22_d, fs_d, random, sw34, sw22; AS_d = AS_d, grid = grid,
             cavity = cavity, flow = flow, lines = lines)
@@ -232,16 +223,15 @@ function propagate(u34, u22, fs, n; cavity, flow, lines, grid, waveform, random 
         Ie2 = view(fs_d.Ie2, ap_d, :)
         Ig4 = view(fs_d.Ig4, ap_d, :)
         Ig2 = view(fs_d.Ig2, ap_d, :)
-        g34 = mean_d(uustrip(line34.σ) * (Ie3 - line34.gg * Ig4)) * 100
-        g22 = mean_d(uustrip(line22.σ) * (Ie2 - line22.gg * Ig2)) * 100
-        yield = mean_d(fs_d.O₂e[ap_d, :]) / uustrip(density.O₂)
-        ye3 = mean_d(Ie3)
-        ye2 = mean_d(Ie2)
+        g34 = cu_mean(uustrip(line34.σ) * (Ie3 - line34.gg * Ig4)) * 100
+        g22 = cu_mean(uustrip(line22.σ) * (Ie2 - line22.gg * Ig2)) * 100
+        yield = cu_mean(fs_d.O₂e[ap_d, :]) / uustrip(density.O₂)
+        ye3 = cu_mean(Ie3)
+        ye2 = cu_mean(Ie2)
         p34 = uustrip(power34[i])
         p22 = uustrip(power22[i])
 
 
-        i == 2 && @printf "%5s | %8s | %8s | %7s | %10s | %10s | %10s | %10s | %7s \n" "i" "g34" "g22" "yield" "Ie3" "Ie2" "power34" "power22" "t(μs)"
         if (i >= 50 && i % 5 == 0) || i < 50
             # if i % 50 == 0
             @printf "%5d | %8.6f | %8.6f | %7.5f | %10.4e | %10.4e | %10.4e | %10.4e | %7.3f \n" i g34 g22 yield ye3 ye2 p34 p22 ustrip(u"μs", i * t_trip)

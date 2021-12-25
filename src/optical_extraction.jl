@@ -13,7 +13,7 @@ end
 function optical_extraction!(u::CuArray, n_upper::CuArray, n_lower::CuArray, d, dt, line, random = false, sw = 1)
     @uustrip d dt line
     s = size(u)
-    threads = (64, 4)
+    threads = (64, 8)
     blocks = cld.(s, threads)
     @cuda threads = threads blocks = blocks kernel_oe(u, n_upper, n_lower, d, dt, line, s, random, sw)
 end
