@@ -24,7 +24,7 @@ ZeemanSpectra = "1a51ffc3-a734-4581-93fb-13c6a2992147"
 
 [compat]
 DataFrames = "1"
-GLMakie = "0.4"
+GLMakie = "0.4, 0.5"
 LineProfile = "1"
 MyShow = "1"
 PhysicalConstants = "0.2"
