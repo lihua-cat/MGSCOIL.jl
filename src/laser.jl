@@ -1,7 +1,8 @@
 dropmean(A; dims = :) = dropdims(mean(A; dims = dims); dims = dims)
 cu_mean(a) = sum(a) / length(a)
 
-function issymmetry(a)
+function issymmetry(a; rtol = 1e-6)
+    a = Array(a)
     len = size(a, 2)
     # iseven(len) || error("not even")
     au = selectdim(a, 2, 1:len÷2)
@@ -9,7 +10,7 @@ function issymmetry(a)
     if eltype(a) <: Bool
         symm = au == al
     else
-        symm = all(au .≈ al)
+        symm = all(isapprox.(au, al; rtol = rtol))
     end
     if !symm
         display(a)
@@ -21,9 +22,9 @@ end
 "output power = total energy at oc plane / one round trip time"
 function outpower(u, ds, e, t_trip)
     if eltype(u) <: Unitful.Quantity
-        p = sum(abs2.(u)) * e * ds / t_trip
+        p = sum(abs2, u) * e * ds / t_trip
     else
-        p = sum(abs2.(u)) * u"cm^-2" * e * ds / t_trip
+        p = sum(abs2, u) * u"cm^-2" * e * ds / t_trip
     end
     return p |> u"W"
 end
@@ -89,6 +90,35 @@ function pulse(i; waveform)
     return dc - out
 end
 
+function flip_average!(a)
+    len = size(a, 2)
+    au = selectdim(a, 2, 1:len÷2)
+    al = selectdim(a, 2, len:-1:(len-len÷2+1))
+    @. au = (au + al) / 2
+    al .= au
+    a
+end
+
+function flip_average!(a::CuArray)
+    s = size(a)
+    threads = (64, 4)
+    blocks = cld.(s, threads)
+    @cuda threads = threads blocks = blocks kernel_fa(a, s)
+end
+
+function kernel_fa(a, s)
+    idi = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    idj = (blockIdx().y - 1) * blockDim().y + threadIdx().y
+    stride = (blockDim().x * gridDim().x, blockDim().y * gridDim().y)
+
+    for i = idi:stride[1]:s[1], j = idj:stride[2]:s[2]÷2
+        jj = s[2] + 1 - j
+        a[i, j] = (a[i, j] + a[i, jj]) / 2
+        a[i, jj] = a[i, j]
+    end
+    nothing
+end
+
 function bounce!(u34_d, u22_d, fs_d, random = false, sw34 = 1, sw22 = 1; AS_d, grid, cavity, flow, lines)
     (; d, r_oc, r_hr) = cavity
     (; react, density) = flow
@@ -118,6 +148,15 @@ function bounce!(u34_d, u22_d, fs_d, random = false, sw34 = 1, sw22 = 1; AS_d, g
         trans22 = view(trans22_d, :, :, tn)
         free_propagate!(u34_d, trans34, plan_d, iplan_d)
         free_propagate!(u22_d, trans22, plan_d, iplan_d)
+        if !random
+            flip_average!(u34_d)
+            flip_average!(u22_d)
+        end
+        #   aperture
+        if j in (1, Nz, Nz + 2, 2Nz + 1)
+            u34_d .*= ap_d
+            u22_d .*= ap_d
+        end
         #   optical extraction
         if j in (1:Nz..., Nz+2:2Nz+1...)
             k = j <= Nz ? j : 2Nz + 2 - j
@@ -127,11 +166,6 @@ function bounce!(u34_d, u22_d, fs_d, random = false, sw34 = 1, sw22 = 1; AS_d, g
             Ig2 = view(fs_d.Ig2, :, :, k)
             optical_extraction!(u34_d, Ie3, Ig4, d_gs, dt_gs, line34, random, sw34)
             optical_extraction!(u22_d, Ie2, Ig2, d_gs, dt_gs, line22, random, sw22)
-        end
-        #   aperture
-        if j in (1, Nz, Nz + 2, 2Nz + 1)
-            u34_d .*= ap_d
-            u22_d .*= ap_d
         end
         #   reflectivity
         if j == Nz + 1
@@ -144,7 +178,7 @@ function bounce!(u34_d, u22_d, fs_d, random = false, sw34 = 1, sw22 = 1; AS_d, g
     end
 end
 
-function propagate(u34, u22, fs, n; cavity, flow, lines, grid, waveform, interp, random = false, PRECISION = Float32)
+function propagate(u34, u22, fs, n; cavity, flow, lines, grid, waveform, interp, random = false, PRECISION = Float32, gpu = true)
     #   unpack input namedtuples
     (; L, ap, radius, r_oc) = cavity
     d_list = cavity.d
@@ -158,17 +192,32 @@ function propagate(u34, u22, fs, n; cavity, flow, lines, grid, waveform, interp,
     #   angular spectrum
     ap_mask, δps34, δps22, trans34, trans22 = angular_spectrum_paras(ap, radius, d_list, Nx, Ny, Nz, X, Y, line34.λ, line22.λ)
     #   submit to gpu device
-    u34_d = CuArray{Complex{PRECISION}}(u34)
-    u22_d = CuArray{Complex{PRECISION}}(u22)
-    fs_d = replace_storage(CuArray{PRECISION}, uustrip.(fs))
-    ap_d = CuArray{Bool}(ap_mask)
-    δps34_d = CuArray{Complex{PRECISION}}(δps34)
-    δps22_d = CuArray{Complex{PRECISION}}(δps22)
-    trans34_d = CuArray{Complex{PRECISION}}(trans34)
-    trans22_d = CuArray{Complex{PRECISION}}(trans22)
-    plan_d, iplan_d = plan_as(u22_d)
-    AS_d = (ap = ap_d, δps34 = δps34_d, δps22 = δps22_d, trans34 = trans34_d,
-        trans22 = trans22_d, p = plan_d, ip = iplan_d)
+    if gpu
+        u34_d = CuArray{Complex{PRECISION}}(u34)
+        u22_d = CuArray{Complex{PRECISION}}(u22)
+        fs_d = replace_storage(CuArray{PRECISION}, uustrip.(fs))
+        ap_d = CuArray{Bool}(ap_mask)
+        δps34_d = CuArray{Complex{PRECISION}}(δps34)
+        δps22_d = CuArray{Complex{PRECISION}}(δps22)
+        trans34_d = CuArray{Complex{PRECISION}}(trans34)
+        trans22_d = CuArray{Complex{PRECISION}}(trans22)
+        plan_d, iplan_d = plan_as(u22_d)
+        AS_d = (ap = ap_d, δps34 = δps34_d, δps22 = δps22_d, trans34 = trans34_d,
+            trans22 = trans22_d, p = plan_d, ip = iplan_d)
+        synchronize()
+    else
+        u34_d = Array{Complex{PRECISION}}(u34)
+        u22_d = Array{Complex{PRECISION}}(u22)
+        fs_d = replace_storage(Array{PRECISION}, uustrip.(fs))
+        ap_d = Array{Bool}(ap_mask)
+        δps34_d = Array{Complex{PRECISION}}(δps34)
+        δps22_d = Array{Complex{PRECISION}}(δps22)
+        trans34_d = Array{Complex{PRECISION}}(trans34)
+        trans22_d = Array{Complex{PRECISION}}(trans22)
+        plan_d, iplan_d = plan_as(u22_d)
+        AS_d = (ap = ap_d, δps34 = δps34_d, δps22 = δps22_d, trans34 = trans34_d,
+            trans22 = trans22_d, p = plan_d, ip = iplan_d)
+    end
 
     #   main loop
     t_trip = 2L / 𝑐

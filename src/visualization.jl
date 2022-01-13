@@ -13,16 +13,16 @@ function plot1(u, grid, ap)
     ap_poly = Point2f0[(apx1, apy1), (apx1, apy2), (apx2, apy2), (apx2, apy1)]
     x = collect(0:Nx-1) * X / Nx
     y = collect(0:Ny-1) * Y / Ny
-    p = abs2.(u)
+    p = u
     # val, pos = findmax(p)
 
     fig = Figure(resolution = (1450, 600))
     colsize!(fig.layout, 1, Relative(3 / 4))
     rowsize!(fig.layout, 1, Relative(1 / 2))
     ax1 = Axis(fig[1, 1], aspect = AxisAspect(X / Y), title = "xy plane")
-    ax2 = Axis(fig[2, 1], title = "along x")
+    ax2 = Axis(fig[2, 1], title = "along x", ylabel="Intensity (W/m²)")
     ax3 = Axis(fig[1, 2], title = "along y")
-    h = heatmap!(ax1, x, y, abs2.(u), colormap = :plasma, tellheight = true)
+    h = heatmap!(ax1, x, y, p, colormap = :coolwarm, tellheight = true, interpolate = true)
     poly!(ax1, ap_poly, color = :transparent, strokecolor = :cyan, strokewidth = 1)
     # lines!(ax2, x, p[:, pos[2]], linewdith = 2)
     lines!(ax2, x, dropmean(p, dims = 2), linewdith = 2)
@@ -45,8 +45,8 @@ function plot2(power, ts)
     @uustrip power ts
 
     fig = Figure(title = "output power")
-    ax1 = Axis(fig[1, 1], xlabel = "time(μs)", ylabel = "power(W)")
-    [lines!(ax1, ts * 1e6, p) for p in power]
+    ax1 = Axis(fig[1, 1], xlabel = "time(μs)", ylabel = "power(kW)")
+    [lines!(ax1, ts * 1e6, p * 1e-3) for p in power]
     fig
 end
 
@@ -62,6 +62,6 @@ function plot3(u, grid)
     cmap = :plasma
     zmin, zmax = minimum(p), maximum(p)
     surface!(ax, x, y, p, colormap = cmap, colorrange = (zmin, zmax))
-
+    # wireframe!(ax, x, y, p)
     fig
 end
