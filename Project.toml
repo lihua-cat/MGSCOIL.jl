@@ -23,6 +23,7 @@ UsefulFunctions = "e5fb00c2-d19e-4bad-b01d-1af59f56b2b2"
 ZeemanSpectra = "1a51ffc3-a734-4581-93fb-13c6a2992147"
 
 [compat]
+CUDA = "3"
 DataFrames = "1"
 GLMakie = "0.4, 0.5"
 LineProfile = "1"
